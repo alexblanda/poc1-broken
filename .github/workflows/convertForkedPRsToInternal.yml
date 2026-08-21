@@ -1,0 +1,32 @@
+name: Convert Fork PR to Internal (PoC mirror)
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "branch simulating the external fork PR head"
+        required: true
+        default: evil
+permissions:
+  contents: write
+jobs:
+  launder:
+    runs-on: ubuntu-latest
+    env:
+      LAUNDER_PAT: ${{ secrets.LAUNDER_PAT }}
+      SRC: ${{ github.event.inputs.source_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Launder source branch to internal + open PR via classic PAT
+        run: |
+          set -euo pipefail
+          git config user.name "poc-bot"; git config user.email "poc-bot@example.com"
+          NEW="fork-pr-${GITHUB_RUN_ID}"
+          git fetch origin "$SRC"
+          git checkout -b "$NEW" FETCH_HEAD
+          git push origin "$NEW"
+          curl -fsS -X POST -H "Authorization: token ${LAUNDER_PAT}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "{\"title\":\"laundered PoC PR\",\"head\":\"${NEW}\",\"base\":\"main\",\"body\":\"poc laundered\"}" \
+            | python3 -c "import json,sys;d=json.load(sys.stdin);print('opened PR #',d.get('number'), d.get('html_url') or d.get('message'))"

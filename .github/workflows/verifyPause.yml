@@ -1,0 +1,20 @@
+name: Verify Pause Readiness (PoC mirror of verifyEmergencyPauseReadiness)
+on:
+  pull_request:
+    paths:
+      - script/pause-check.sh
+      - .github/workflows/verifyPause.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: ${{ github.repository == 'dmandefy/lifi-launder-poc' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run pause readiness script (PR-head, attacker-modifiable)
+        run: bash script/pause-check.sh
+        env:
+          PRIVATE_KEY_PAUSER_WALLET: ${{ secrets.DUMMY_PAUSER_KEY }}
