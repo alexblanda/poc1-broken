@@ -1,0 +1,44 @@
+name: Title Inject PoC (mirror of versionControlAndAuditCheck version-control job)
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  version-control:
+    if: ${{ github.event.pull_request.draft == false && github.event.pull_request.base.ref == 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Get modified src/*.sol -> contracts_for_title (mirror)
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          FILES="$(git diff --name-only --diff-filter=AM "origin/$BASE_REF" HEAD)"
+          : > contracts_for_title.txt
+          while IFS= read -r FILE; do
+            echo "$FILE" | grep -qE '^src/.*\.sol$' || continue
+            VERSION=$(grep -E '^/// @custom:version' "$FILE" | head -1 | sed -E 's/^.*version ([0-9.]+).*/\1/')
+            [ -z "$VERSION" ] && continue
+            FILENAME=$(basename "$FILE" .sol)
+            echo "${FILENAME} v${VERSION}" >> contracts_for_title.txt
+          done <<< "$FILES"
+          echo "contracts_for_title:"; cat contracts_for_title.txt
+      - name: Compose updated PR title (mirror)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          UPDATED=$(paste -sd, contracts_for_title.txt)
+          BASE_TITLE=$(echo "$PR_TITLE" | sed 's/\s*\[[^]]*\]//g')
+          PR_TITLE_UPDATED="${BASE_TITLE} [${UPDATED}]"
+          echo "PR_TITLE_UPDATED=$PR_TITLE_UPDATED" >> "$GITHUB_ENV"
+      - name: Update PR title (VULNERABLE inline expansion, mirrors line 317)
+        env:
+          GH_PAT: ${{ secrets.DUMMY_PAUSER_KEY }}
+          PR_TITLE_UPDATED: ${{ env.PR_TITLE_UPDATED }}
+        run: |
+          echo "simulating: gh pr edit N --title ${{ env.PR_TITLE_UPDATED }}"
