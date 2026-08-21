@@ -1,32 +1,32 @@
-name: Convert Fork PR to Internal (PoC mirror - pull_request_target)
+name: Convert Fork PR to Internal (PoC mirror - classic PAT)
 on:
   pull_request_target:
     types: [opened]
 permissions:
   contents: write
-  pull-requests: write
 jobs:
   launder:
     if: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: Launder fork PR content to internal branch + open internal PR
+        with: { ref: main }
+      - name: Launder fork content + open internal PR via classic PAT
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAUNDER_PAT: ${{ secrets.LAUNDER_PAT }}
           FORK_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           FORK_REF: ${{ github.event.pull_request.head.ref }}
           PRNUM: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          echo "LAUNDER_FIRED: pull_request_target auto-ran for fork PR #$PRNUM from $FORK_REPO ($FORK_REF) with NO approval gate in workflow"
+          echo "LAUNDER_FIRED for fork PR #$PRNUM from $FORK_REPO ($FORK_REF)"
           git config user.name poc-bot; git config user.email poc-bot@example.com
           NEW="fork-pr-${PRNUM}-${GITHUB_RUN_ID}"
           git remote add fork "https://github.com/${FORK_REPO}.git"
           git fetch fork "$FORK_REF"
           git checkout -b "$NEW" FETCH_HEAD
           git push origin "$NEW"
-          echo "LAUNDERED: pushed internal branch $NEW carrying fork content verbatim"
-          gh pr create --repo "$GITHUB_REPOSITORY" --head "$NEW" --base main --title "internal: laundered #$PRNUM" --body "laundered by poc" && echo "INTERNAL_PR_OPENED" || echo "pr create rc=$?"
+          curl -fsS -X POST -H "Authorization: token ${LAUNDER_PAT}" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pulls" \
+            -d "{\"title\":\"internal laundered #${PRNUM}\",\"head\":\"${NEW}\",\"base\":\"main\",\"body\":\"laundered\"}" \
+            | python3 -c "import json,sys;d=json.load(sys.stdin);print('INTERNAL_PR_OPENED #',d.get('number'))"
